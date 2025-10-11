@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "low-latency-pyconnl25"
+version = "0.1.0"
+description = "Low-latency demo for PyCon NL 2025"
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [{ name = "Alexander Procelewski" }]
+license = { text = "MIT" }
+
+dependencies = [
+  "uvloop",
+  "numpy",
+  "msgspec",
+]
+
+[project.scripts]
+pycon-demo = "main:main"

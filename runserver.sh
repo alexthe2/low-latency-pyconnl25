@@ -1,0 +1,1 @@
+python3.13 main.py --mode server --host '0.0.0.0'
