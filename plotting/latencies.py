@@ -4,11 +4,11 @@ Plot processing-time latencies from a CSV produced by the aggregator.
 
 Expected columns (any missing ones are ignored gracefully):
   - timestamp (e.g. "2025-09-15 12:34:56")
-  - avg_proc_time_ms
-  - p50_ms
-  - p90_ms
-  - p99_ms
-  - p99_9_ms
+  - avg_proc_time_us
+  - p50_us
+  - p90_us
+  - p99_us
+  - p99_9_us
 
 Usage:
   python latencies.py --csv report.csv --out latencies.png --xmax 150 --logy
@@ -20,11 +20,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 DEFAULT_METRICS = [
-    "avg_proc_time_ms",
-    "p50_ms",
-    "p90_ms",
-    "p99_ms",
-    "p99_9_ms",
+    "avg_proc_time_us",
+    "p50_us",
+    "p90_us",
+    "p99_us",
+    "p99_9_us",
 ]
 
 
@@ -100,7 +100,7 @@ def main():
         plt.plot(x, df[m], label=m)
 
     plt.xlabel("Seconds Since Start")
-    plt.ylabel("Processing Time (ms)")
+    plt.ylabel("Processing Time (us)")
     plt.title(args.title)
     if args.xmax is not None:
         plt.xlim(0, args.xmax)

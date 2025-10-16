@@ -115,6 +115,15 @@ def _percentiles_ms_from_seconds(
     vals = np.percentile(arr, ps, method="linear")
     return dict(zip(ps, vals.tolist()))
 
+def _percentiles_us_from_seconds(durations_s: list[float], ps: list[float]) -> dict[float, float]:
+    if not durations_s:
+        return {p: 0.0 for p in ps}
+
+    arr = np.fromiter(durations_s, dtype=np.float64) * 1e6
+    vals = np.percentile(arr, ps, method="linear")
+    return dict(zip(ps, vals.tolist()))
+
+
 
 _csv_fh = None
 
@@ -127,8 +136,8 @@ def _open_csv():
         if new:
             _csv_fh.write(
                 "timestamp,ok_msgs,lost_msgs,ooo_msgs,queuefull_msgs,attempts,"
-                "loss_percent,throughput,avg_proc_time_ms,"
-                "p50_ms,p90_ms,p99_ms,p99_9_ms,active_peers,"
+                "loss_percent,throughput,avg_proc_time_us,"
+                "p50_us,p90_us,p99_us,p99_9_us,active_peers,"
                 "bufcall_p50,bufcall_p90,bufcall_p99\n"
             )
     return _csv_fh
@@ -196,7 +205,7 @@ class ShardStats:
         now = now_monotonic()
         elapsed = now - self.start_time
         throughput = self.total_msgs / elapsed if elapsed > 0 else 0.0
-        avg_proc_ms = self.proc_time_total / max(self.total_msgs, 1) * 1000.0
+        avg_proc_us = self.proc_time_total / max(self.total_msgs, 1) * 1e6
         tot_ok = self.total_msgs
         tot_lost = self.lost_msgs
         tot_ooo = self.dropped_out_of_order
@@ -209,7 +218,7 @@ class ShardStats:
             f"[S{shard_id} STATS total] elapsed={elapsed:.1f}s, "
             f"ok={tot_ok}, lost={tot_lost}, ooo={tot_ooo}, queuefull={tot_qfull}, "
             f"attempts={attempts}, loss%={loss_pct:.2f}, throughput={throughput:.2f} msg/s, "
-            f"avg_proc_time={avg_proc_ms:.3f} ms/msg, queue_size={qsize}, "
+            f"avg_proc_time={avg_proc_us:.3f} us/msg, queue_size={qsize}, "
             f"unknown_loc_readings={self.unknown_loc_readings}"
         )
 
@@ -473,7 +482,7 @@ async def stats_task(state: ShardState):
         # compute interval stats
         interval_msgs = msg_count
         interval_avg_ms = (sum(proc) / len(proc) * 1000.0) if proc else 0.0
-        pct_i = _percentiles_ms_from_seconds(proc, [50.0, 90.0, 99.0, 99.9])
+        pct_i = _percentiles_us_from_seconds(proc, [50.0, 90.0, 99.0, 99.9])
         ip50 = pct_i[50.0]
         ip90 = pct_i[90.0]
         ip99 = pct_i[99.0]
@@ -482,7 +491,7 @@ async def stats_task(state: ShardState):
         # compute ~30s window stats
         win_durs = [d for _, d in window_durations]
         win_avg_ms = (sum(win_durs) / len(win_durs) * 1000.0) if win_durs else 0.0
-        pct_w = _percentiles_ms_from_seconds(win_durs, [50.0, 90.0, 99.0, 99.9])
+        pct_w = _percentiles_us_from_seconds(win_durs, [50.0, 90.0, 99.0, 99.9])
         wp50 = pct_w[50.0]
         wp90 = pct_w[90.0]
         wp99 = pct_w[99.0]
@@ -501,15 +510,15 @@ async def stats_task(state: ShardState):
         # Log
         logger.info(
             f"[S{state.shard_id} INTERVAL {LOG_INT:.0f}s] "
-            f"msgs={interval_msgs}, avg_proc={interval_avg_ms:.3f} ms, "
-            f"p50={ip50:.3f} ms, p90={ip90:.3f} ms, p99={ip99:.3f} ms, p99.9={ip999:.3f} ms"
+            f"msgs={interval_msgs}, avg_proc={interval_avg_ms:.3f} us, "
+            f"p50={ip50:.3f} us, p90={ip90:.3f} us, p99={ip99:.3f} us, p99.9={ip999:.3f} us"
         )
         logger.info(
             f"[S{state.shard_id} WINDOW {int(ACTIVE_WINDOW_SEC)}s] "
             f"ok={ok}, lost={lost}, ooo={ooo}, queuefull={qfull}, attempts={attempts}, loss%={loss_pct:.2f}, "
             f"throughput={ok / ACTIVE_WINDOW_SEC:.2f} msg/s, "
-            f"avg_proc_time={win_avg_ms:.3f} ms, "
-            f"p50={wp50:.3f} ms, p90={wp90:.3f} ms, p99={wp99:.3f} ms, p99.9={wp999:.3f} ms, "
+            f"avg_proc_time={win_avg_ms:.3f} us, "
+            f"p50={wp50:.3f} us, p90={wp90:.3f} us, p99={wp99:.3f} us, p99.9={wp999:.3f} us, "
             f"active_peers~={st.active_connections_count(now)}, queuefull_recent={qfull}"
         )
 
@@ -588,14 +597,14 @@ def aggregate_loop(states: list[ShardState], interval: float = 5.0):
                 if recent_attempts
                 else 0.0
             )
-            recent_avg_proc_ms = (
-                (tot_recent_proc_sum / tot_recent_proc_cnt * 1000.0)
+            recent_avg_proc_us = (
+                (tot_recent_proc_sum / tot_recent_proc_cnt * 1e6)
                 if tot_recent_proc_cnt
                 else 0.0
             )
             throughput = tot_recent_ok / interval  # msgs/sec over this tick
 
-            pct = _percentiles_ms_from_seconds(
+            pct = _percentiles_us_from_seconds(
                 all_durations_s, [50.0, 90.0, 99.0, 99.9]
             )
             p50, p90, p99, p999 = pct[50.0], pct[90.0], pct[99.0], pct[99.9]
@@ -616,8 +625,8 @@ def aggregate_loop(states: list[ShardState], interval: float = 5.0):
                 f"ok={tot_recent_ok}, lost={tot_recent_lost}, ooo={tot_recent_ooo}, queuefull={tot_recent_qfull}, "
                 f"attempts={recent_attempts}, loss%={recent_loss_pct:.2f}, "
                 f"throughput={tot_recent_ok / ACTIVE_WINDOW_SEC:.2f} msg/s, "
-                f"avg_proc_time={recent_avg_proc_ms:.3f} ms/msg, "
-                f"p50={p50:.3f} ms, p90={p90:.3f} ms, p99={p99:.3f} ms, p99.9={p999:.3f} ms, "
+                f"avg_proc_time={recent_avg_proc_us:.3f} us/msg, "
+                f"p50={p50:.3f} us, p90={p90:.3f} us, p99={p99:.3f} us, p99.9={p999:.3f} us, "
                 f"active_peers~={active_peers}, total_queue_size~{queues}"
                 f"buffer_call_count_p50={cp50:.1f}, p90={cp90:.1f}, p99={cp99:.1f}"
             )
@@ -630,7 +639,7 @@ def aggregate_loop(states: list[ShardState], interval: float = 5.0):
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')},"
                 f"{tot_recent_ok},{tot_recent_lost},{tot_recent_ooo},{tot_recent_qfull},"
                 f"{recent_attempts},{recent_loss_pct:.2f},{tot_recent_ok / ACTIVE_WINDOW_SEC:.2f},"
-                f"{recent_avg_proc_ms:.3f},"
+                f"{recent_avg_proc_us:.3f},"
                 f"{p50:.3f},{p90:.3f},{p99:.3f},{p999:.3f},"
                 f"{active_peers},"
                 f"{cp50:.1f},{cp90:.1f},{cp99:.1f}\n"
@@ -638,10 +647,10 @@ def aggregate_loop(states: list[ShardState], interval: float = 5.0):
 
             start0 = min(starts) if starts else now
             elapsed_min = max((now - start0) / 60.0, 0.0001)
-            avg_proc_ms_total = tot_proc / max(tot_ok, 1) * 1000.0
+            avg_proc_us_total = tot_proc / max(tot_ok, 1) * 1e6
             logger.info(
                 f"[AGG total ~{elapsed_min:.1f}m] ok={tot_ok}, lost={tot_lost}, ooo={tot_ooo}, queuefull={tot_qfull}, "
-                f"loss%={loss_pct:.2f}, avg_proc_time={avg_proc_ms_total:.3f} ms/msg, unknown_loc_readings={tot_unknown}"
+                f"loss%={loss_pct:.2f}, avg_proc_time={avg_proc_us_total:.3f} us/msg, unknown_loc_readings={tot_unknown}"
             )
 
             # Combined grid every ~30s — snapshot cell dict values before summing
