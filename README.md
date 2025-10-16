@@ -1,2 +1,2 @@
-# low-latency-pyconnl25
-Server implementation regarding 
+# Low Latency Python - Say Goodbye to C++
+Slides & Implementation  
